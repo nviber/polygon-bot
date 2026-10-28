@@ -3,6 +3,7 @@ import { config } from "./config.js";
 import { startDashboardServer } from "./dashboard/server.js";
 import { PaperTradingEngine } from "./engine.js";
 import { PaperStore } from "./store.js";
+import { runWatchLoop } from "./watch.js";
 
 const mode = process.argv[2] ?? "once";
 
@@ -26,17 +27,23 @@ async function run(): Promise<void> {
   await store.save(state);
 }
 
-await store.resetSession();
-
 if (mode === "dashboard") {
   await startDashboardServer(store);
 }
+else if (mode === "watch") {
+  const controller = new AbortController();
+  const stop = (): void => controller.abort();
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
+
+  try {
+    await runWatchLoop(run, config.pollIntervalMs, controller.signal);
+  }
+  finally {
+    process.off("SIGINT", stop);
+    process.off("SIGTERM", stop);
+  }
+}
 else {
   await run();
-}
-
-if (mode === "watch") {
-  setInterval(() => {
-    void run();
-  }, config.pollIntervalMs);
 }

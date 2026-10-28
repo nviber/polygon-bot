@@ -22,28 +22,64 @@ const availablePort = async (): Promise<number> => {
   return address.port;
 };
 
-test("application startup clears persisted paper-trading session data", { timeout: 15_000 }, async () => {
+test("one-tick and dashboard startup preserve persisted paper-trading session data", { timeout: 15_000 }, async () => {
   const directory = await mkdtemp(join(tmpdir(), "paper-startup-"));
   const statePath = join(directory, "paper-state.json");
   const port = await availablePort();
   const previousSession = {
-    cash: 1,
+    cash: 777.5,
     startingCash: 1_000,
-    positions: [{ id: "prior", status: "SETTLED", realizedPnl: 99 }],
-    arbitragePositions: [{ id: "prior-basket", status: "REDEEMED", lockedProfitUsd: 1 }],
+    positions: [{
+      id: "prior",
+      marketId: "prior-market",
+      question: "Prior market",
+      outcome: "Up",
+      tokenId: "prior-token",
+      strategyId: "btc-paper-exploration",
+      shares: 2,
+      entryPrice: 0.4,
+      entryFeeUsd: 0.02,
+      openedAt: "2026-10-01T00:00:00.000Z",
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      status: "OPEN",
+    }],
+    arbitragePositions: [{
+      id: "prior-basket",
+      marketId: "prior-basket-market",
+      question: "Prior basket",
+      firstOutcome: "Up",
+      secondOutcome: "Down",
+      sharesPerOutcome: 1,
+      totalCostUsd: 0.9,
+      totalFeeUsd: 0.02,
+      guaranteedPayoutUsd: 1,
+      lockedProfitUsd: 0.08,
+      openedAt: "2026-10-01T00:00:00.000Z",
+      status: "REDEEMED",
+    }],
     dailyRealizedPnl: { "2026-10-01": 99 },
     events: [{ at: "2026-10-01T00:00:00.000Z", type: "PAPER_FILL", message: "prior session" }],
   };
   await writeFile(statePath, JSON.stringify(previousSession));
 
-  const application = spawn(process.execPath, [fileURLToPath(new URL("./index.js", import.meta.url)), "dashboard"], {
-    env: {
-      ...process.env,
-      PAPER_STATE_PATH: statePath,
-      PAPER_STARTING_CASH: "250",
-      DASHBOARD_PORT: String(port),
-      ENABLED_STRATEGIES: "weather-forecast-edge",
-    },
+  const env = {
+    ...process.env,
+    PAPER_STATE_PATH: statePath,
+    PAPER_STARTING_CASH: "250",
+    DASHBOARD_PORT: String(port),
+    ENABLED_STRATEGIES: "weather-forecast-edge",
+  };
+  const entrypoint = fileURLToPath(new URL("./index.js", import.meta.url));
+  const oneTick = spawn(process.execPath, [entrypoint, "once"], { env, stdio: ["ignore", "pipe", "pipe"] });
+  let oneTickOutput = "";
+  oneTick.stdout.on("data", (chunk: Buffer) => { oneTickOutput += chunk.toString(); });
+  oneTick.stderr.on("data", (chunk: Buffer) => { oneTickOutput += chunk.toString(); });
+  const [oneTickCode] = await once(oneTick, "exit") as [number | null, NodeJS.Signals | null];
+  assert.equal(oneTickCode, 0, `one-tick exited unsuccessfully: ${oneTickOutput}`);
+  assert.deepEqual(JSON.parse(await readFile(statePath, "utf8")), previousSession);
+
+  const application = spawn(process.execPath, [entrypoint, "dashboard"], {
+    env,
     stdio: ["ignore", "pipe", "pipe"],
   });
   let output = "";
@@ -83,13 +119,10 @@ test("application startup clears persisted paper-trading session data", { timeou
       events: unknown[];
     };
 
-    assert.equal(status.account.cash, 250);
-    assert.equal(persisted.cash, 250);
-    assert.equal(persisted.startingCash, 250);
-    assert.deepEqual(persisted.positions, []);
-    assert.deepEqual(persisted.arbitragePositions, []);
-    assert.deepEqual(persisted.dailyRealizedPnl, {});
-    assert.deepEqual(persisted.events, []);
+    assert.equal(status.account.cash, previousSession.cash);
+    assert.deepEqual(status.positions, previousSession.positions);
+    assert.deepEqual(status.arbitrages, previousSession.arbitragePositions);
+    assert.deepEqual(persisted, previousSession);
   }
   finally {
     if (application.exitCode === null && application.signalCode === null) {
