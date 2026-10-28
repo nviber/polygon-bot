@@ -1,10 +1,10 @@
-Build passed. All 53 deterministic tests passed. Clean tarball installation, executable dashboard launch, and consumer configuration/state-path verification passed.
+Build passed. All 54 tests passed. Clean tarball installation verified the executable permission, dashboard launch, no-argument one-tick behavior, watch mode, and consumer configuration/state paths.
 
 1. Run the package build and `npm test` in this repository.
-passed: `npm run build` passed; `npm test` passed with 53 tests and 0 failures.
+passed: `npm run build` passed; `npm test` passed with all 54 tests, including persistence and serialized-watch regression tests.
 
 2. Create a package tarball, install it in a clean temporary consumer, and verify the installed executable is available and can launch the dashboard.
-passed: Packed the package, installed the tarball into a clean temporary consumer, confirmed the `polygon-bot` executable was available, and verified its dashboard responded at `/api/status` and `/`.
+passed: Created and installed a clean package tarball. The packaged bin retained mode `100755`; the installed executable launched the dashboard and also ran no-argument and watch modes.
 
 3. Verify the consumer's `.env` and data directory are used rather than paths inside the installed dependency.
-passed: The installed dashboard used the consumer `.env` port and `PAPER_STARTING_CASH=4321`; it wrote `data/paper-state.json` in the consumer directory, not inside the installed dependency.
+passed: The installed app loaded the consumer `.env` settings and read/wrote `data/paper-state.json` in the consumer directory. Existing cash and positions survived dashboard startup, a tick, and watch; no state file appeared inside the dependency.
