@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { config } from "./config.js";
 import type { BinaryMarket, Book, PaperState, Position } from "./domain.js";
 import { PaperTradingEngine } from "./engine.js";
 import { OkxSpotClient } from "./market/okx.js";
@@ -13,6 +14,16 @@ const market: BinaryMarket = {
   closesAt: new Date(Date.now() + 180_000).toISOString(),
   active: true,
   outcomes: [{ outcome: "Up", tokenId: "up", price: 0.5 }, { outcome: "Down", tokenId: "down", price: 0.5 }],
+};
+
+const ethArbitrageMarket: BinaryMarket = {
+  id: "eth-arbitrage-market",
+  question: "Ethereum binary outcomes",
+  slug: "eth-arbitrage-market",
+  asset: "ETH",
+  closesAt: new Date(Date.now() + 180_000).toISOString(),
+  active: true,
+  outcomes: [{ outcome: "Up", tokenId: "eth-up", price: 0.475 }, { outcome: "Down", tokenId: "eth-down", price: 0.475 }],
 };
 
 const book: Book = { tokenId: "", bestBid: 0.2, bestAsk: 0.75, bidSize: 100, askSize: 100, timestamp: Date.now() };
@@ -50,6 +61,23 @@ class UnavailableBookMarkets extends PolymarketPublicClient {
 class FailedBookMarkets extends FakeMarkets {
   override async getBook(): Promise<Book> {
     throw new Error("CLOB book request failed: 503");
+  }
+}
+
+class EthArbitrageMarkets extends PolymarketPublicClient {
+  override async findBySlug(): Promise<BinaryMarket> {
+    return ethArbitrageMarket;
+  }
+
+  override async getBook(tokenId: string): Promise<Book> {
+    return {
+      tokenId,
+      bestBid: 0.465,
+      bestAsk: 0.475,
+      bidSize: 100,
+      askSize: 100,
+      timestamp: Date.now(),
+    };
   }
 }
 
@@ -185,6 +213,41 @@ test("does not query or settle a position before its market expires", async () =
 
   assert.deepEqual(markets.lookups, []);
   assert.equal(position.status, "OPEN");
+});
+
+test("uses the crypto fee rate when evaluating ETH arbitrage baskets", async () => {
+  const mutableConfig = config as unknown as {
+    arbitrageMarketSlugs: string[];
+    arbitrageMinProfitUsd: number;
+    maxTradeUsd: number;
+    maxOpenExposureUsd: number;
+  };
+  const previousSlugs = [...mutableConfig.arbitrageMarketSlugs];
+  const previousMinimumProfit = mutableConfig.arbitrageMinProfitUsd;
+  const previousMaximumTrade = mutableConfig.maxTradeUsd;
+  const previousMaximumExposure = mutableConfig.maxOpenExposureUsd;
+  mutableConfig.arbitrageMarketSlugs.splice(0, mutableConfig.arbitrageMarketSlugs.length, ethArbitrageMarket.slug);
+  mutableConfig.arbitrageMinProfitUsd = 0.25;
+  mutableConfig.maxTradeUsd = 10;
+  mutableConfig.maxOpenExposureUsd = 30;
+
+  try {
+    const engine = new PaperTradingEngine(new EthArbitrageMarkets());
+    engine.setStrategies(["binary-basket-arbitrage"]);
+    const state = freshState();
+
+    const decision = await engine.tick(state);
+
+    assert.match(decision, /locked profit \$0\.1531 is below the minimum/);
+    assert.deepEqual(state.positions, []);
+    assert.deepEqual(state.arbitragePositions, []);
+  }
+  finally {
+    mutableConfig.arbitrageMarketSlugs.splice(0, mutableConfig.arbitrageMarketSlugs.length, ...previousSlugs);
+    mutableConfig.arbitrageMinProfitUsd = previousMinimumProfit;
+    mutableConfig.maxTradeUsd = previousMaximumTrade;
+    mutableConfig.maxOpenExposureUsd = previousMaximumExposure;
+  }
 });
 
 test("first default BTC tick records a paper fill despite negative edge and wide spread", async () => {

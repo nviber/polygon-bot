@@ -456,7 +456,7 @@ export class PaperTradingEngine {
       }
 
       const maximumCost = Math.min(config.maxTradeUsd, state.cash);
-      const category: MarketCategory = market.asset === "BTC" ? "crypto" : "general";
+      const category: MarketCategory = market.asset === "OTHER" ? "general" : "crypto";
       const quote = quoteBinaryBasket(firstBook, secondBook, category, maximumCost);
 
       if (!quote) {
