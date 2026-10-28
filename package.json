@@ -1,0 +1,37 @@
+{
+  "name": "@nviber/polygon-bot",
+  "version": "0.1.0",
+  "description": "Paper-only Polymarket short-horizon trading bot",
+  "type": "module",
+  "main": "./dist/index.js",
+  "exports": "./dist/index.js",
+  "bin": {
+    "polygon-bot": "./bin/polygon-bot.js"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "README.md",
+    "RESEARCH.md",
+    ".env.example"
+  ],
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "npm run clean && tsc -p tsconfig.json",
+    "prepare": "npm run build",
+    "prepack": "npm run build",
+    "start": "node dist/index.js",
+    "dev": "npm run build && node dist/index.js",
+    "dashboard": "npm run build && node dist/index.js dashboard",
+    "test": "npm run build && node --test dist/*.test.js dist/**/*.test.js",
+    "test:e2e": "npm run build && node --test e2e/dashboard.test.mjs"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "playwright": "^1.64.1",
+    "typescript": "^5.8.0"
+  }
+}
